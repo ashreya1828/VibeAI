@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -27,6 +28,10 @@ class LoginActivity : ComponentActivity() {
                 LoginScreen(
                     onSignUpClick = {
                         startActivity(Intent(this, SignUpActivity::class.java))
+                    },
+                    onLoginSuccess = {
+                        startActivity(Intent(this, HomeActivity::class.java))
+                        finish() // Prevent going back to login
                     }
                 )
             }
@@ -35,9 +40,14 @@ class LoginActivity : ComponentActivity() {
 }
 
 @Composable
-fun LoginScreen(onSignUpClick: () -> Unit = {}) {
+fun LoginScreen(
+    onSignUpClick: () -> Unit = {},
+    onLoginSuccess: () -> Unit = {}
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+
+    val context = LocalContext.current
 
     Scaffold { innerPadding ->
         Box(
@@ -47,11 +57,13 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}) {
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+
                 // App title
                 Text(
                     text = "VibeAI",
@@ -69,7 +81,7 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Email
+                // Email input
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -78,7 +90,7 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}) {
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Password
+                // Password input
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
@@ -90,10 +102,12 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Login Button
+                // LOGIN BUTTON
                 Button(
                     onClick = {
-                        // TODO: Login logic goes here
+                        //  TEMPORARY LOGIN LOGIC
+                        // For now, accept ANY email + password and go to Home
+                        onLoginSuccess()
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -102,17 +116,16 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}) {
                     Text("Log In")
                 }
 
-                // --- SIGN UP NAVIGATION BUTTON ---
-                TextButton(
-                    onClick = onSignUpClick
-                ) {
+                // SIGN UP BUTTON
+                TextButton(onClick = onSignUpClick) {
                     Text("Don’t have an account? Sign Up")
                 }
 
                 // Continue as Guest
                 TextButton(
                     onClick = {
-                        // TODO: Navigate to dashboard as guest
+                        // Navigate to Home as guest
+                        onLoginSuccess()
                     }
                 ) {
                     Text("Continue without an account")

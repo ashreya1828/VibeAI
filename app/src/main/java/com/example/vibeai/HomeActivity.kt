@@ -1,5 +1,6 @@
 package com.example.vibeai
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,7 +32,11 @@ class HomeActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VibeAITheme {
-                HomeScreen()
+                HomeScreen(
+                    onCreateMoodClick = {
+                        startActivity(Intent(this, CreateMoodActivity::class.java))
+                    }
+                )
             }
         }
     }
@@ -50,12 +55,16 @@ data class MoodBoard(
     val isFavorite: Boolean
 )
 
+
+
 // ---------- HOME SCREEN ----------
 
 @Composable
-fun HomeScreen() {
-    // Sample mood boards (in real app this will come from Room DB)
-    var moodBoards by remember { mutableStateOf(sampleMoodBoards()) }
+fun HomeScreen(
+    onCreateMoodClick: () -> Unit = {}
+) {
+    // Use shared repository list instead of local state
+    val moodBoards = MoodBoardRepository.boards
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(HomeFilter.ALL) }
@@ -68,7 +77,7 @@ fun HomeScreen() {
         val matchesFilter = when (selectedFilter) {
             HomeFilter.ALL -> true
             HomeFilter.FAVOURITES -> board.isFavorite
-            HomeFilter.RECENT -> true // For now, we treat all as recent; later you can sort by date
+            HomeFilter.RECENT -> true // later you can sort/filter by date
         }
 
         matchesSearch && matchesFilter
@@ -80,9 +89,7 @@ fun HomeScreen() {
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = {
-                    // TODO: Navigate to "Create Mood" screen
-                }
+                onClick = onCreateMoodClick
             ) {
                 Text("+")
             }
@@ -137,10 +144,12 @@ fun HomeScreen() {
                                 // TODO: Open mood board detail / editor
                             },
                             onToggleFavorite = {
-                                moodBoards = moodBoards.map { existing ->
-                                    if (existing.id == board.id) {
-                                        existing.copy(isFavorite = !existing.isFavorite)
-                                    } else existing
+                                val index = MoodBoardRepository.boards
+                                    .indexOfFirst { it.id == board.id }
+                                if (index != -1) {
+                                    val current = MoodBoardRepository.boards[index]
+                                    MoodBoardRepository.boards[index] =
+                                        current.copy(isFavorite = !current.isFavorite)
                                 }
                             }
                         )
@@ -218,8 +227,11 @@ fun HomeTopBar() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .background(Brush.horizontalGradient(gradientColors)),
+            .background(Brush.horizontalGradient(gradientColors))
+            .padding(
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            )  // ⬅ Add safe-area padding
+            .height(64.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         Text(
@@ -231,6 +243,7 @@ fun HomeTopBar() {
         )
     }
 }
+
 
 // ---------- CARD FOR MOOD BOARD ----------
 
