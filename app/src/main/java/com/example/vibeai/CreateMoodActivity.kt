@@ -7,30 +7,48 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.vibeai.ui.theme.VibeAITheme
+import com.google.firebase.auth.FirebaseAuth
 
 class CreateMoodActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val auth = FirebaseAuth.getInstance()
+        val currentUser = auth.currentUser
+
+        // Extra safety: if somehow opened without login
+        if (currentUser == null) {
+            finish()
+            return
+        }
+
+        val userId = currentUser.uid
+
         setContent {
             VibeAITheme {
                 CreateMoodScreen(
+                    onBack = { finish() },
                     onSave = { newBoard ->
-                        // Add new board to shared list
-                        MoodBoardRepository.boards.add(newBoard)
-                        // Go back to Home
-                        finish()
+                        // Save to Firestore via repository
+                        MoodBoardRepository.addBoard(userId, newBoard) { success ->
+                            // You can show a Snackbar/Toast if you want
+                            if (success) {
+                                finish() // go back to Home after saving
+                            }
+                        }
                     }
                 )
             }
@@ -38,15 +56,17 @@ class CreateMoodActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateMoodScreen(
+    onBack: () -> Unit = {},
     onSave: (MoodBoard) -> Unit = {}
 ) {
     var prompt by remember { mutableStateOf("") }
     var selectedVibe by remember { mutableStateOf("Calm") }
     var hasPreview by remember { mutableStateOf(false) }
 
-    // Fake palette based on vibe
+    // Fake palette based on vibe (this is UI logic, not "hard-coded data")
     val previewColors = remember(selectedVibe) {
         when (selectedVibe) {
             "Calm" -> listOf(
@@ -77,7 +97,21 @@ fun CreateMoodScreen(
         }
     }
 
-    Scaffold { innerPadding ->
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Create Mood") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -85,13 +119,6 @@ fun CreateMoodScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
-            // Title
-            Text(
-                text = "Create Mood",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold
-            )
 
             Text(
                 text = "Describe the vibe you want to create. For example: \"Tropical getaway\" or \"Cozy winter evening\".",
@@ -219,8 +246,7 @@ fun FilterChipSimple(
         shape = MaterialTheme.shapes.large,
         color = if (selected) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier
-            .clickable(onClick = onClick)
+        modifier = Modifier.clickable(onClick = onClick)
     ) {
         Text(
             text = text,
