@@ -12,6 +12,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,16 +28,34 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vibeai.ui.theme.VibeAITheme
+import com.google.firebase.auth.FirebaseAuth
 
 class HomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val auth = FirebaseAuth.getInstance()
+        val currentUser = auth.currentUser
+
+        // If user is not logged in → go back to Login
+        if (currentUser == null) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
         setContent {
             VibeAITheme {
                 HomeScreen(
+                    userEmail = currentUser.email,
                     onCreateMoodClick = {
                         startActivity(Intent(this, CreateMoodActivity::class.java))
+                    },
+                    onLogoutClick = {
+                        auth.signOut()
+                        startActivity(Intent(this, LoginActivity::class.java))
+                        finish()
                     }
                 )
             }
@@ -55,13 +76,13 @@ data class MoodBoard(
     val isFavorite: Boolean
 )
 
-
-
 // ---------- HOME SCREEN ----------
 
 @Composable
 fun HomeScreen(
-    onCreateMoodClick: () -> Unit = {}
+    userEmail: String? = null,
+    onCreateMoodClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {}
 ) {
     // Use shared repository list instead of local state
     val moodBoards = MoodBoardRepository.boards
@@ -83,15 +104,22 @@ fun HomeScreen(
         matchesSearch && matchesFilter
     }
 
+    val totalBoards = moodBoards.size
+    val favouriteCount = moodBoards.count { it.isFavorite }
+
     Scaffold(
         topBar = {
-            HomeTopBar()
+            HomeTopBar(
+                userEmail = userEmail,
+                onLogoutClick = onLogoutClick
+            )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onCreateMoodClick
-            ) {
-                Text("+")
+            FloatingActionButton(onClick = onCreateMoodClick) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Create mood board"
+                )
             }
         }
     ) { innerPadding ->
@@ -102,12 +130,25 @@ fun HomeScreen(
                 .padding(16.dp)
         ) {
 
+            // Small stats row
+            Text(
+                text = "You have $totalBoards boards · $favouriteCount favourites",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Inspiration of the day card (fits VibeAI idea)
+            InspirationCard()
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Search bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 label = { Text("Search mood boards") },
                 singleLine = true
             )
@@ -129,7 +170,7 @@ fun HomeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No mood boards yet.\nTap + to create your first one!",
+                        text = "No mood boards yet.\nTap the + button to create your first one!",
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
@@ -141,7 +182,7 @@ fun HomeScreen(
                         MoodBoardCard(
                             board = board,
                             onClick = {
-                                // TODO: Open mood board detail / editor
+                                // TODO: Open mood board detail / editor (later sprint)
                             },
                             onToggleFavorite = {
                                 val index = MoodBoardRepository.boards
@@ -201,16 +242,16 @@ fun FilterChip(
 ) {
     Surface(
         shape = RoundedCornerShape(50),
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier
-            .clickable(onClick = onClick)
+        color = if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.clickable(onClick = onClick)
     ) {
         Text(
             text = text,
-            modifier = Modifier
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             fontSize = 13.sp,
-            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (selected) Color.White
+            else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -218,7 +259,10 @@ fun FilterChip(
 // ---------- TOP BAR ----------
 
 @Composable
-fun HomeTopBar() {
+fun HomeTopBar(
+    userEmail: String?,
+    onLogoutClick: () -> Unit
+) {
     val gradientColors = listOf(
         Color(0xFF7F00FF),
         Color(0xFF3F51B5)
@@ -230,20 +274,80 @@ fun HomeTopBar() {
             .background(Brush.horizontalGradient(gradientColors))
             .padding(
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            )  // ⬅ Add safe-area padding
-            .height(64.dp),
-        contentAlignment = Alignment.CenterStart
+            )
+            .height(72.dp)
     ) {
-        Text(
-            text = "VibeAI Mood Boards",
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    text = "VibeAI Mood Boards",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                userEmail?.let {
+                    Text(
+                        text = "Signed in as $it",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            IconButton(onClick = onLogoutClick) {
+                Icon(
+                    imageVector = Icons.Default.Logout,
+                    contentDescription = "Log out",
+                    tint = Color.White
+                )
+            }
+        }
     }
 }
 
+// ---------- INSPIRATION CARD ----------
+
+@Composable
+fun InspirationCard() {
+    val gradient = Brush.horizontalGradient(
+        listOf(
+            Color(0xFF8E2DE2),
+            Color(0xFF4A00E0)
+        )
+    )
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .background(gradient)
+                .padding(16.dp)
+        ) {
+            Column {
+                Text(
+                    text = "Inspiration of the day",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Try prompts like “Tropical getaway”, “Minimal workspace”, or “Cyberpunk city” to auto-generate mood boards.",
+                    color = Color.White,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+}
 
 // ---------- CARD FOR MOOD BOARD ----------
 
@@ -261,8 +365,7 @@ fun MoodBoardCard(
             .clickable(onClick = onClick)
     ) {
         Column(
-            modifier = Modifier
-                .padding(16.dp)
+            modifier = Modifier.padding(16.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
@@ -276,9 +379,7 @@ fun MoodBoardCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                TextButton(
-                    onClick = { onToggleFavorite() }
-                ) {
+                TextButton(onClick = { onToggleFavorite() }) {
                     Text(
                         text = if (board.isFavorite) "★" else "☆",
                         fontSize = 18.sp
@@ -295,7 +396,6 @@ fun MoodBoardCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Mood tag and image count
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
@@ -314,7 +414,6 @@ fun MoodBoardCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Colour palette row
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -338,7 +437,7 @@ fun MoodBoardCard(
     }
 }
 
-// ---------- SAMPLE DATA ----------
+// ---------- SAMPLE DATA (IF NEEDED) ----------
 
 fun sampleMoodBoards(): List<MoodBoard> = listOf(
     MoodBoard(
@@ -391,6 +490,8 @@ fun sampleMoodBoards(): List<MoodBoard> = listOf(
 @Composable
 fun HomePreview() {
     VibeAITheme {
-        HomeScreen()
+        HomeScreen(
+            userEmail = "demo@vibeai.com"
+        )
     }
 }
