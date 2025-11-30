@@ -31,11 +31,13 @@ import com.example.vibeai.ui.theme.VibeAITheme
 import com.google.firebase.auth.FirebaseAuth
 
 class HomeActivity : ComponentActivity() {
+
+    private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val auth = FirebaseAuth.getInstance()
         val currentUser = auth.currentUser
 
         // If user is not logged in → go back to Login
@@ -45,14 +47,22 @@ class HomeActivity : ComponentActivity() {
             return
         }
 
+        val userId = currentUser.uid
+
+        // Start listening to this user's mood boards in Firestore
+        MoodBoardRepository.startListening(userId)
+
         setContent {
             VibeAITheme {
                 HomeScreen(
                     userEmail = currentUser.email,
+                    userId = userId,
                     onCreateMoodClick = {
                         startActivity(Intent(this, CreateMoodActivity::class.java))
                     },
                     onLogoutClick = {
+                        // Stop Firestore listener, sign out, go to Login
+                        MoodBoardRepository.stopListening()
                         auth.signOut()
                         startActivity(Intent(this, LoginActivity::class.java))
                         finish()
@@ -60,6 +70,12 @@ class HomeActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Safety: stop listening when Activity is destroyed
+        MoodBoardRepository.stopListening()
     }
 }
 
@@ -81,10 +97,11 @@ data class MoodBoard(
 @Composable
 fun HomeScreen(
     userEmail: String? = null,
+    userId: String? = null,
     onCreateMoodClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {}
 ) {
-    // All boards the user has actually created in this session/app
+    // All boards that Firestore is keeping in sync
     val moodBoards = MoodBoardRepository.boards
 
     var searchQuery by remember { mutableStateOf("") }
@@ -131,7 +148,7 @@ fun HomeScreen(
                 .padding(16.dp)
         ) {
 
-            // Small stats row – live data, not hard-coded
+            // Small stats row – live data from Firestore
             Text(
                 text = "You have $totalBoards boards · $favouriteCount favourites",
                 style = MaterialTheme.typography.bodySmall,
@@ -186,12 +203,9 @@ fun HomeScreen(
                                 // later: open mood board detail / editor
                             },
                             onToggleFavorite = {
-                                val index = MoodBoardRepository.boards
-                                    .indexOfFirst { it.id == board.id }
-                                if (index != -1) {
-                                    val current = MoodBoardRepository.boards[index]
-                                    MoodBoardRepository.boards[index] =
-                                        current.copy(isFavorite = !current.isFavorite)
+                                // Update favourite flag in Firestore (UI will refresh via listener)
+                                if (userId != null) {
+                                    MoodBoardRepository.toggleFavorite(userId, board)
                                 }
                             }
                         )
@@ -342,14 +356,12 @@ fun InspirationCard(latestBoard: MoodBoard?) {
                 Spacer(modifier = Modifier.height(4.dp))
 
                 if (latestBoard != null) {
-                    // Uses the user’s most recent board as inspiration
                     Text(
                         text = "Revisit \"${latestBoard.title}\" or create a new board with a similar vibe (${latestBoard.moodTag}).",
                         color = Color.White,
                         fontSize = 13.sp
                     )
                 } else {
-                    // Generic message when no boards exist yet
                     Text(
                         text = "Start by creating your first mood board. Think of a theme or feeling you want to explore today.",
                         color = Color.White,
@@ -456,7 +468,8 @@ fun MoodBoardCard(
 fun HomePreview() {
     VibeAITheme {
         HomeScreen(
-            userEmail = "demo@vibeai.com"
+            userEmail = "demo@vibeai.com",
+            userId = null // no Firestore calls in preview
         )
     }
 }
