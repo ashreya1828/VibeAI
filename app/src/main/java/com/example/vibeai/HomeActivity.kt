@@ -84,7 +84,7 @@ fun HomeScreen(
     onCreateMoodClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {}
 ) {
-    // Use shared repository list instead of local state
+    // All boards the user has actually created in this session/app
     val moodBoards = MoodBoardRepository.boards
 
     var searchQuery by remember { mutableStateOf("") }
@@ -106,6 +106,7 @@ fun HomeScreen(
 
     val totalBoards = moodBoards.size
     val favouriteCount = moodBoards.count { it.isFavorite }
+    val latestBoard = moodBoards.maxByOrNull { it.id } // simple way to get "most recent"
 
     Scaffold(
         topBar = {
@@ -130,7 +131,7 @@ fun HomeScreen(
                 .padding(16.dp)
         ) {
 
-            // Small stats row
+            // Small stats row – live data, not hard-coded
             Text(
                 text = "You have $totalBoards boards · $favouriteCount favourites",
                 style = MaterialTheme.typography.bodySmall,
@@ -139,8 +140,8 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Inspiration of the day card (fits VibeAI idea)
-            InspirationCard()
+            // Inspiration card now uses *real* boards when available
+            InspirationCard(latestBoard = latestBoard)
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -182,7 +183,7 @@ fun HomeScreen(
                         MoodBoardCard(
                             board = board,
                             onClick = {
-                                // TODO: Open mood board detail / editor (later sprint)
+                                // later: open mood board detail / editor
                             },
                             onToggleFavorite = {
                                 val index = MoodBoardRepository.boards
@@ -311,10 +312,10 @@ fun HomeTopBar(
     }
 }
 
-// ---------- INSPIRATION CARD ----------
+// ---------- INSPIRATION CARD (DYNAMIC) ----------
 
 @Composable
-fun InspirationCard() {
+fun InspirationCard(latestBoard: MoodBoard?) {
     val gradient = Brush.horizontalGradient(
         listOf(
             Color(0xFF8E2DE2),
@@ -333,17 +334,28 @@ fun InspirationCard() {
         ) {
             Column {
                 Text(
-                    text = "Inspiration of the day",
+                    text = "Inspiration",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Try prompts like “Tropical getaway”, “Minimal workspace”, or “Cyberpunk city” to auto-generate mood boards.",
-                    color = Color.White,
-                    fontSize = 13.sp
-                )
+
+                if (latestBoard != null) {
+                    // Uses the user’s most recent board as inspiration
+                    Text(
+                        text = "Revisit \"${latestBoard.title}\" or create a new board with a similar vibe (${latestBoard.moodTag}).",
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
+                } else {
+                    // Generic message when no boards exist yet
+                    Text(
+                        text = "Start by creating your first mood board. Think of a theme or feeling you want to explore today.",
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
+                }
             }
         }
     }
@@ -402,7 +414,7 @@ fun MoodBoardCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AssistChip(
-                    onClick = { /* could filter by tag in future */ },
+                    onClick = { /* later: filter by this tag */ },
                     label = { Text(board.moodTag) }
                 )
 
@@ -436,53 +448,6 @@ fun MoodBoardCard(
         }
     }
 }
-
-// ---------- SAMPLE DATA (IF NEEDED) ----------
-
-fun sampleMoodBoards(): List<MoodBoard> = listOf(
-    MoodBoard(
-        id = 1,
-        title = "Tropical Getaway",
-        description = "Bright, warm, and sunny beach-inspired mood board with palm trees and sunsets.",
-        moodTag = "Tropical",
-        imageCount = 8,
-        dominantColors = listOf(
-            Color(0xFFFFC107),
-            Color(0xFFFF5722),
-            Color(0xFF4CAF50)
-        ),
-        lastUpdated = "Today",
-        isFavorite = true
-    ),
-    MoodBoard(
-        id = 2,
-        title = "Minimal Workspace",
-        description = "Clean, neutral workspace with soft whites, woods, and calm tones.",
-        moodTag = "Minimal",
-        imageCount = 5,
-        dominantColors = listOf(
-            Color(0xFFB0BEC5),
-            Color(0xFFFFFFFF),
-            Color(0xFF795548)
-        ),
-        lastUpdated = "Yesterday",
-        isFavorite = false
-    ),
-    MoodBoard(
-        id = 3,
-        title = "Cyberpunk City",
-        description = "Neon-filled futuristic streets with deep purples, blues, and pinks.",
-        moodTag = "Cyberpunk",
-        imageCount = 10,
-        dominantColors = listOf(
-            Color(0xFF9C27B0),
-            Color(0xFF2196F3),
-            Color(0xFFE91E63)
-        ),
-        lastUpdated = "3 days ago",
-        isFavorite = true
-    )
-)
 
 // ---------- PREVIEW ----------
 
