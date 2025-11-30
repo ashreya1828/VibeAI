@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "229279813096",
+    "project_id": "vibeai-21955",
+    "storage_bucket": "vibeai-21955.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:229279813096:android:014f639705c2843ea9e85d",
+        "android_client_info": {
+          "package_name": "com.example.vibeai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASQwNad3BtvMH0L8Alik4eeCzsVcuNysw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

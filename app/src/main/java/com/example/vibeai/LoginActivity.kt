@@ -2,6 +2,7 @@ package com.example.vibeai
 
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,11 +19,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.vibeai.ui.theme.VibeAITheme
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 
 class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Ensure Firebase is initialised
+        FirebaseApp.initializeApp(this)
+
         setContent {
             VibeAITheme {
                 LoginScreen(
@@ -46,6 +53,9 @@ fun LoginScreen(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
 
@@ -100,20 +110,64 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Error message (from Firebase)
+                errorMessage?.let { msg ->
+                    Text(
+                        text = msg,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // LOGIN BUTTON
+                // LOGIN BUTTON (Firebase)
                 Button(
                     onClick = {
-                        //  TEMPORARY LOGIN LOGIC
-                        // For now, accept ANY email + password and go to Home
-                        onLoginSuccess()
+                        if (email.isBlank() || password.isBlank()) {
+                            Toast.makeText(
+                                context,
+                                "Please enter email and password",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@Button
+                        }
+
+                        isLoading = true
+                        errorMessage = null
+
+                        val auth = FirebaseAuth.getInstance()
+                        auth.signInWithEmailAndPassword(email.trim(), password)
+                            .addOnCompleteListener { task ->
+                                isLoading = false
+                                if (task.isSuccessful) {
+                                    Toast.makeText(
+                                        context,
+                                        "Login successful",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    onLoginSuccess()
+                                } else {
+                                    errorMessage = task.exception?.localizedMessage
+                                        ?: "Login failed. Please try again."
+                                }
+                            }
                     },
+                    enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
                 ) {
-                    Text("Log In")
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Log In")
+                    }
                 }
 
                 // SIGN UP BUTTON
@@ -124,7 +178,7 @@ fun LoginScreen(
                 // Continue as Guest
                 TextButton(
                     onClick = {
-                        // Navigate to Home as guest
+                        // Skip Firebase and go to Home as guest
                         onLoginSuccess()
                     }
                 ) {
