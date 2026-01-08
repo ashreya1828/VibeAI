@@ -30,6 +30,8 @@
             android:name=".HomeActivity"/>.
         <activity
             android:name=".CreateMoodActivity"/>.
+
+        <activity android:name=".MoodBoardDetailActivity" />
     </application>
 
 </manifest>

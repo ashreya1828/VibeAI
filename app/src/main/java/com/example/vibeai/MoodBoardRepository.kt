@@ -31,7 +31,8 @@ object MoodBoardRepository {
                         description = doc.getString("description") ?: "",
                         moodTag = doc.getString("moodTag") ?: "",
                         imageCount = (doc.getLong("imageCount") ?: 0L).toInt(),
-                        dominantColors = (doc.get("dominantColors") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+                        dominantColors = (doc.get("dominantColors") as? List<*>)?.mapNotNull { it as? String }
+                            ?: emptyList(),
                         updatedAt = doc.getLong("updatedAt") ?: 0L,
                         isFavorite = doc.getBoolean("isFavorite") ?: false
                     )
@@ -63,5 +64,27 @@ object MoodBoardRepository {
     fun deleteMoodBoard(userId: String, boardId: String) {
         if (boardId.isBlank()) return
         userBoardsRef(userId).document(boardId).delete()
+    }
+
+    fun addBoard(
+        userId: String,
+        board: MoodBoard,
+        onSuccess: () -> Unit = {},
+        onError: (Exception) -> Unit = {}
+    ) {
+        userBoardsRef(userId)
+            .add(
+                mapOf(
+                    "title" to board.title,
+                    "description" to board.description,
+                    "moodTag" to board.moodTag,
+                    "imageCount" to board.imageCount,
+                    "dominantColors" to board.dominantColors,
+                    "updatedAt" to System.currentTimeMillis(),
+                    "isFavorite" to board.isFavorite
+                )
+            )
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onError(e) }
     }
 }
