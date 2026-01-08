@@ -1,153 +1,67 @@
 package com.example.vibeai
 
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.snapshots.SnapshotStateList
-import androidx.compose.ui.graphics.Color
-import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 
 object MoodBoardRepository {
 
-    private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
+    private val db: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
+    private var listener: ListenerRegistration? = null
 
-    // Listener so we can stop it when not needed
-    private var listenerRegistration: ListenerRegistration? = null
+    // Compose will recompose when this list updates
+    val boards = mutableStateListOf<MoodBoard>()
 
-    // This list is what your HomeScreen & others will observe
-    val boards: SnapshotStateList<MoodBoard> = mutableStateListOf()
+    private fun userBoardsRef(userId: String) =
+        db.collection("users").document(userId).collection("moodBoards")
 
-    /**
-     * Start listening to the current user's mood boards in Firestore.
-     * Call this after login (we'll hook it into HomeActivity next).
-     */
     fun startListening(userId: String) {
-        // Remove old listener if any
-        listenerRegistration?.remove()
+        stopListening()
 
-        listenerRegistration = db.collection("users")
-            .document(userId)
-            .collection("boards")
-            .orderBy("lastUpdatedTimestamp", Query.Direction.DESCENDING)
+        listener = userBoardsRef(userId)
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    // For now just ignore the error; you can log it if you like
-                    return@addSnapshotListener
+                if (error != null || snapshot == null) return@addSnapshotListener
+
+                val list = snapshot.documents.map { doc ->
+                    MoodBoard(
+                        id = doc.id,
+                        title = doc.getString("title") ?: "",
+                        description = doc.getString("description") ?: "",
+                        moodTag = doc.getString("moodTag") ?: "",
+                        imageCount = (doc.getLong("imageCount") ?: 0L).toInt(),
+                        dominantColors = (doc.get("dominantColors") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+                        updatedAt = doc.getLong("updatedAt") ?: 0L,
+                        isFavorite = doc.getBoolean("isFavorite") ?: false
+                    )
                 }
 
-                val newList = snapshot?.documents
-                    ?.mapNotNull { doc -> docToMoodBoard(doc) }
-                    ?: emptyList()
-
                 boards.clear()
-                boards.addAll(newList)
+                boards.addAll(list)
             }
     }
 
-    /**
-     * Stop listening (e.g. when user logs out).
-     */
     fun stopListening() {
-        listenerRegistration?.remove()
-        listenerRegistration = null
+        listener?.remove()
+        listener = null
         boards.clear()
     }
 
-    /**
-     * Save a new mood board for this user into Firestore.
-     * The list will update automatically because of the snapshot listener.
-     */
-    fun addBoard(userId: String, board: MoodBoard, onResult: (Boolean) -> Unit = {}) {
-        val data = moodBoardToMap(board)
-
-        db.collection("users")
-            .document(userId)
-            .collection("boards")
-            .add(data)
-            .addOnSuccessListener { onResult(true) }
-            .addOnFailureListener { onResult(false) }
-    }
-
-    /**
-     * Toggle favourite for this board in Firestore.
-     * We find the document by the numeric 'id' field.
-     */
     fun toggleFavorite(userId: String, board: MoodBoard) {
-        val newValue = !board.isFavorite
-
-        db.collection("users")
-            .document(userId)
-            .collection("boards")
-            .whereEqualTo("id", board.id)
-            .limit(1)
-            .get()
-            .addOnSuccessListener { query ->
-                val doc = query.documents.firstOrNull() ?: return@addOnSuccessListener
-                doc.reference.update("isFavorite", newValue)
-            }
+        if (board.id.isBlank()) return
+        userBoardsRef(userId).document(board.id)
+            .update(
+                mapOf(
+                    "isFavorite" to !board.isFavorite,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+            )
     }
 
-    /**
-     * Delete a mood board from Firestore.
-     */
-    fun deleteBoard(userId: String, board: MoodBoard) {
-        db.collection("users")
-            .document(userId)
-            .collection("boards")
-            .whereEqualTo("id", board.id)
-            .limit(1)
-            .get()
-            .addOnSuccessListener { query ->
-                val doc = query.documents.firstOrNull() ?: return@addOnSuccessListener
-                doc.reference.delete()
-            }
-    }
-
-    // --------- INTERNAL MAPPERS (MoodBoard <-> Firestore map) ---------
-
-    private fun moodBoardToMap(board: MoodBoard): Map<String, Any> {
-        return mapOf(
-            // We use your existing Int id field (you generate it in CreateMoodScreen)
-            "id" to board.id,
-            "title" to board.title,
-            "description" to board.description,
-            "moodTag" to board.moodTag,
-            "imageCount" to board.imageCount,
-            "lastUpdated" to board.lastUpdated,
-            // for ordering by time in Firestore
-            "lastUpdatedTimestamp" to System.currentTimeMillis(),
-            "isFavorite" to board.isFavorite,
-            // Colors can’t be stored as Color, so we store them as Ints
-            "colorInts" to board.dominantColors.map { it.value.toLong() }
-        )
-    }
-
-    private fun docToMoodBoard(doc: DocumentSnapshot): MoodBoard? {
-        val id = doc.getLong("id")?.toInt() ?: return null
-
-        val title = doc.getString("title") ?: ""
-        val description = doc.getString("description") ?: ""
-        val moodTag = doc.getString("moodTag") ?: ""
-        val imageCount = doc.getLong("imageCount")?.toInt() ?: 0
-        val lastUpdated = doc.getString("lastUpdated") ?: ""
-        val isFavorite = doc.getBoolean("isFavorite") ?: false
-
-        val colorIntsAny = doc.get("colorInts") as? List<*>
-        val colors = colorIntsAny
-            ?.mapNotNull { it as? Number }
-            ?.map { num -> Color(num.toInt()) }
-            ?: emptyList()
-
-        return MoodBoard(
-            id = id,
-            title = title,
-            description = description,
-            moodTag = moodTag,
-            imageCount = imageCount,
-            dominantColors = colors,
-            lastUpdated = lastUpdated,
-            isFavorite = isFavorite
-        )
+    // Optional: if you want delete later
+    fun deleteMoodBoard(userId: String, boardId: String) {
+        if (boardId.isBlank()) return
+        userBoardsRef(userId).document(boardId).delete()
     }
 }

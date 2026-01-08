@@ -7,7 +7,20 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateTopPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -15,20 +28,37 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vibeai.ui.theme.VibeAITheme
 import com.google.firebase.auth.FirebaseAuth
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class HomeActivity : ComponentActivity() {
 
@@ -61,11 +91,16 @@ class HomeActivity : ComponentActivity() {
                         startActivity(Intent(this, CreateMoodActivity::class.java))
                     },
                     onLogoutClick = {
-                        // Stop Firestore listener, sign out, go to Login
                         MoodBoardRepository.stopListening()
                         auth.signOut()
                         startActivity(Intent(this, LoginActivity::class.java))
                         finish()
+                    },
+                    onOpenBoard = { boardId ->
+                        startActivity(
+                            Intent(this, MoodBoardDetailActivity::class.java)
+                                .putExtra("boardId", boardId)
+                        )
                     }
                 )
             }
@@ -74,70 +109,56 @@ class HomeActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Safety: stop listening when Activity is destroyed
         MoodBoardRepository.stopListening()
     }
 }
 
-// ---------- DATA MODEL ----------
-
-data class MoodBoard(
-    val id: Int,
-    val title: String,
-    val description: String,
-    val moodTag: String,
-    val imageCount: Int,
-    val dominantColors: List<Color>,
-    val lastUpdated: String,
-    val isFavorite: Boolean
-)
-
 // ---------- HOME SCREEN ----------
+
+enum class HomeFilter { ALL, FAVOURITES, RECENT }
 
 @Composable
 fun HomeScreen(
     userEmail: String? = null,
     userId: String? = null,
     onCreateMoodClick: () -> Unit = {},
-    onLogoutClick: () -> Unit = {}
+    onLogoutClick: () -> Unit = {},
+    onOpenBoard: (String) -> Unit = {}
 ) {
-    // All boards that Firestore is keeping in sync
     val moodBoards = MoodBoardRepository.boards
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(HomeFilter.ALL) }
+    var selectedTag by remember { mutableStateOf<String?>(null) }
 
-    val filteredBoards = moodBoards.filter { board ->
-        val matchesSearch = searchQuery.isBlank() ||
-                board.title.contains(searchQuery, ignoreCase = true) ||
-                board.moodTag.contains(searchQuery, ignoreCase = true)
+    val baseList = when (selectedFilter) {
+        HomeFilter.ALL -> moodBoards
+        HomeFilter.FAVOURITES -> moodBoards.filter { it.isFavorite }
+        HomeFilter.RECENT -> moodBoards.sortedByDescending { it.updatedAt }
+    }
 
-        val matchesFilter = when (selectedFilter) {
-            HomeFilter.ALL -> true
-            HomeFilter.FAVOURITES -> board.isFavorite
-            HomeFilter.RECENT -> true // later you can sort/filter by date
-        }
+    val filteredBoards = baseList.filter { board ->
+        val matchesSearch =
+            searchQuery.isBlank() ||
+                    board.title.contains(searchQuery, ignoreCase = true) ||
+                    board.moodTag.contains(searchQuery, ignoreCase = true)
 
-        matchesSearch && matchesFilter
+        val matchesTag = selectedTag == null || board.moodTag.equals(selectedTag, ignoreCase = true)
+
+        matchesSearch && matchesTag
     }
 
     val totalBoards = moodBoards.size
     val favouriteCount = moodBoards.count { it.isFavorite }
-    val latestBoard = moodBoards.maxByOrNull { it.id } // simple way to get "most recent"
+    val latestBoard = moodBoards.maxByOrNull { it.updatedAt }
 
     Scaffold(
         topBar = {
-            HomeTopBar(
-                userEmail = userEmail,
-                onLogoutClick = onLogoutClick
-            )
+            HomeTopBar(userEmail = userEmail, onLogoutClick = onLogoutClick)
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onCreateMoodClick) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Create mood board"
-                )
+                Icon(imageVector = Icons.Default.Add, contentDescription = "Create mood board")
             }
         }
     ) { innerPadding ->
@@ -147,22 +168,18 @@ fun HomeScreen(
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
-
-            // Small stats row – live data from Firestore
             Text(
                 text = "You have $totalBoards boards · $favouriteCount favourites",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // Inspiration card now uses *real* boards when available
             InspirationCard(latestBoard = latestBoard)
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Search bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -171,42 +188,44 @@ fun HomeScreen(
                 singleLine = true
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            if (selectedTag != null) {
+                Spacer(Modifier.height(10.dp))
+                AssistChip(
+                    onClick = { selectedTag = null },
+                    label = { Text("Tag: $selectedTag (tap to clear)") }
+                )
+            }
 
-            // Filter row
+            Spacer(Modifier.height(12.dp))
+
             FilterRow(
                 selectedFilter = selectedFilter,
                 onFilterSelected = { selectedFilter = it }
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Mood boards list
             if (filteredBoards.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No mood boards yet.\nTap the + button to create your first one!",
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        text = "No mood boards found.\nTap the + button to create one!",
+                        textAlign = TextAlign.Center
                     )
                 }
             } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(filteredBoards, key = { it.id }) { board ->
                         MoodBoardCard(
                             board = board,
-                            onClick = {
-                                // later: open mood board detail / editor
-                            },
+                            onClick = { onOpenBoard(board.id) },
                             onToggleFavorite = {
-                                // Update favourite flag in Firestore (UI will refresh via listener)
-                                if (userId != null) {
-                                    MoodBoardRepository.toggleFavorite(userId, board)
-                                }
+                                if (userId != null) MoodBoardRepository.toggleFavorite(userId, board)
+                            },
+                            onTagClick = { tag ->
+                                selectedTag = tag
                             }
                         )
                     }
@@ -216,11 +235,7 @@ fun HomeScreen(
     }
 }
 
-// ---------- FILTER SUPPORT ----------
-
-enum class HomeFilter {
-    ALL, FAVOURITES, RECENT
-}
+// ---------- FILTER ROW ----------
 
 @Composable
 fun FilterRow(
@@ -231,42 +246,24 @@ fun FilterRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        FilterChip(
-            text = "All",
-            selected = selectedFilter == HomeFilter.ALL,
-            onClick = { onFilterSelected(HomeFilter.ALL) }
-        )
-        FilterChip(
-            text = "Favourites",
-            selected = selectedFilter == HomeFilter.FAVOURITES,
-            onClick = { onFilterSelected(HomeFilter.FAVOURITES) }
-        )
-        FilterChip(
-            text = "Recent",
-            selected = selectedFilter == HomeFilter.RECENT,
-            onClick = { onFilterSelected(HomeFilter.RECENT) }
-        )
+        FilterChip("All", selectedFilter == HomeFilter.ALL) { onFilterSelected(HomeFilter.ALL) }
+        FilterChip("Favourites", selectedFilter == HomeFilter.FAVOURITES) { onFilterSelected(HomeFilter.FAVOURITES) }
+        FilterChip("Recent", selectedFilter == HomeFilter.RECENT) { onFilterSelected(HomeFilter.RECENT) }
     }
 }
 
 @Composable
-fun FilterChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
+fun FilterChip(text: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(50),
-        color = if (selected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.surfaceVariant,
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.clickable(onClick = onClick)
     ) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             fontSize = 13.sp,
-            color = if (selected) Color.White
-            else MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -274,22 +271,14 @@ fun FilterChip(
 // ---------- TOP BAR ----------
 
 @Composable
-fun HomeTopBar(
-    userEmail: String?,
-    onLogoutClick: () -> Unit
-) {
-    val gradientColors = listOf(
-        Color(0xFF7F00FF),
-        Color(0xFF3F51B5)
-    )
+fun HomeTopBar(userEmail: String?, onLogoutClick: () -> Unit) {
+    val gradientColors = listOf(Color(0xFF7F00FF), Color(0xFF3F51B5))
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(Brush.horizontalGradient(gradientColors))
-            .padding(
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            )
+            .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding())
             .height(72.dp)
     ) {
         Row(
@@ -326,21 +315,13 @@ fun HomeTopBar(
     }
 }
 
-// ---------- INSPIRATION CARD (DYNAMIC) ----------
+// ---------- INSPIRATION CARD ----------
 
 @Composable
 fun InspirationCard(latestBoard: MoodBoard?) {
-    val gradient = Brush.horizontalGradient(
-        listOf(
-            Color(0xFF8E2DE2),
-            Color(0xFF4A00E0)
-        )
-    )
+    val gradient = Brush.horizontalGradient(listOf(Color(0xFF8E2DE2), Color(0xFF4A00E0)))
 
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Surface(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .background(gradient)
@@ -373,13 +354,14 @@ fun InspirationCard(latestBoard: MoodBoard?) {
     }
 }
 
-// ---------- CARD FOR MOOD BOARD ----------
+// ---------- MOOD BOARD CARD ----------
 
 @Composable
 fun MoodBoardCard(
     board: MoodBoard,
     onClick: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onTagClick: (String) -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -388,12 +370,9 @@ fun MoodBoardCard(
             .fillMaxWidth()
             .clickable(onClick = onClick)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = board.title,
                     fontWeight = FontWeight.Bold,
@@ -403,11 +382,8 @@ fun MoodBoardCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                TextButton(onClick = { onToggleFavorite() }) {
-                    Text(
-                        text = if (board.isFavorite) "★" else "☆",
-                        fontSize = 18.sp
-                    )
+                TextButton(onClick = onToggleFavorite) {
+                    Text(text = if (board.isFavorite) "★" else "☆", fontSize = 18.sp)
                 }
             }
 
@@ -426,7 +402,7 @@ fun MoodBoardCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AssistChip(
-                    onClick = { /* later: filter by this tag */ },
+                    onClick = { onTagClick(board.moodTag) },
                     label = { Text(board.moodTag) }
                 )
 
@@ -438,27 +414,47 @@ fun MoodBoardCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                board.dominantColors.forEach { color ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                board.dominantColors.take(6).forEach { hex ->
                     Box(
                         modifier = Modifier
                             .size(22.dp)
                             .clip(CircleShape)
-                            .background(color)
+                            .background(hexToColor(hex))
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Last updated: ${board.lastUpdated}",
+                text = "Updated: ${formatTime(board.updatedAt)}",
                 style = MaterialTheme.typography.labelSmall
             )
         }
     }
+}
+
+// ---------- HELPERS ----------
+
+private fun hexToColor(hex: String): Color {
+    return try {
+        val clean = hex.removePrefix("#")
+        val value = clean.toLong(16)
+        when (clean.length) {
+            6 -> Color((0xFF000000 or value).toInt())
+            8 -> Color(value.toInt())
+            else -> Color.Gray
+        }
+    } catch (_: Exception) {
+        Color.Gray
+    }
+}
+
+private fun formatTime(epoch: Long): String {
+    if (epoch <= 0L) return "—"
+    val sdf = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault())
+    return sdf.format(Date(epoch))
 }
 
 // ---------- PREVIEW ----------
@@ -469,7 +465,8 @@ fun HomePreview() {
     VibeAITheme {
         HomeScreen(
             userEmail = "demo@vibeai.com",
-            userId = null // no Firestore calls in preview
+            userId = null,
+            onOpenBoard = {}
         )
     }
 }
