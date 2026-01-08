@@ -29,7 +29,7 @@ import com.google.firebase.auth.FirebaseAuth
  *    - updatedAt: Long (handled by repository)
  *    - removed lastUpdated
  *
- * ✅ Works with UPDATED repository signature:
+ * Works with UPDATED repository signature:
  *    addBoard(userId, board, onSuccess, onError)
  */
 class CreateMoodActivity : ComponentActivity() {
